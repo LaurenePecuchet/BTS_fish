@@ -42,21 +42,7 @@ geom_polygon(data=grid,      aes(x=long, y=lat, group=group, fill=metric), col="
 ```
 
 
-```{r the grid}
-#Construct a global grid with cells approximately 1000 miles across
-dggs          <- dgconstruct(res=7, metric=FALSE, resround='down')
-
-## only keep cell with at least >50% seas
-load("landperc.Rdata")
-landperc$seaprop<-landperc$nobs/landperc$ncells
-summary(landperc)
-landperc<-landperc[landperc$seaprop>0.5,]
-```
-
-
-## Import surveys and create a equal-size grid
-We will use time-series from 1993 (to match available environment) and relative abundance per haul.
-The surveys cover European Seas and North American coasts.
+## Import surveys, pre-processed and format them
 
 ```{r Norway data}
 ### Libraries
