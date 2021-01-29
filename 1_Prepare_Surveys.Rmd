@@ -8,7 +8,8 @@ editor_options:
 ---
 
 **Aim of the script:**
-This script import, clean, pre-process and combine bottom trawl surveys across ecoregions. The combined bottom trawl surveys will later be used to analyse spatio-temporal changes in fish populations and communities.
+This script import, clean, pre-process and combine bottom trawl surveys across ecoregions.Large part of the code is taken from Aurore Maureaud. For more info on cleaning US surveys, have a look at OceanAdapt codes.
+The combined bottom trawl surveys will later be used to analyse spatio-temporal changes in fish populations and communities.
 
 
 ```{r setup, include=FALSE}
@@ -19,7 +20,12 @@ library(dggridR)
 library(readr)
 library(data.table)
 library(ggplot2)
+library(rgdal)
 
+library(worms)
+library(worrms)
+library(crul)
+library(urltools)
 
 world <- map_data('world')
 axis_labels <- rbind( data.frame(long =c(-85,-85,-85),lat = c(40,60,80), labels = c("40ºN","60ºN", "80ºN")), # x axis labels
@@ -39,30 +45,47 @@ geom_polygon(data=grid,      aes(x=long, y=lat, group=group, fill=metric), col="
         axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks=element_blank(),
       axis.title.x=element_blank(),axis.title.y=element_blank())}
 
+
+cleanspl <- function(name){
+  temp <- paste0(toupper(substr(name, 1, 1)), tolower(substr(name, 2, nchar(name))))
+  temp <- gsub("\\((.+?)\\)$", "", temp)
+  temp <- gsub("\\.$", "", temp) #remove last .
+  temp <- gsub(" $", "", temp) #remove empty space
+  temp <- gsub("            $", "", temp) #remove empty spaces
+  temp <- gsub("^ ", "", temp)
+  temp <- gsub(" .$", "", temp) #remove last single character
+  temp <- gsub(" .$$", "", temp) #remove last double characters
+  temp <- gsub(" unid$", "", temp)
+  temp <- gsub(" unident$", "", temp)
+  temp <- gsub(" spp$", "", temp)
+  temp <- gsub(" spp.$", "", temp)
+  temp <- gsub(" sp$", "", temp)
+  temp <- gsub(" sp.$", "", temp)
+  temp <- gsub(" s.c$", "", temp)
+  temp <- gsub(" s.p$", "", temp)
+  temp <- gsub(" s.f$", "", temp)
+  temp <- gsub(" s.o$", "", temp)
+  temp <- gsub(" so$", "", temp)
+  temp <- gsub(" yoy$", "", temp)
+  temp <- gsub(" YOY$", "", temp)
+  temp <- gsub(" n. gen$", "", temp)
+  temp <- gsub(" aff.$", "", temp)
+  temp <- gsub(" kroyer", "", temp)
+  temp <- gsub("-occidentale", "", temp)
+  temp <- gsub("_rubricing", "", temp)
+  temp <- gsub("-dilectus", "", temp)
+  temp <- gsub(" cf tubicola", "", temp)
+  temp <- gsub(",$", "", temp)
+  temp <- gsub(",", " ", temp)
+  return(temp)
+}
+
 ```
 
 
-```{r the grid}
-#Construct a global grid with cells approximately 1000 miles across
-dggs          <- dgconstruct(res=7, metric=FALSE, resround='down')
-
-## only keep cell with at least >50% seas
-load("landperc.Rdata")
-landperc$seaprop<-landperc$nobs/landperc$ncells
-summary(landperc)
-landperc<-landperc[landperc$seaprop>0.5,]
-```
-
-
-## Import surveys and create a equal-size grid
-We will use time-series from 1993 (to match available environment) and relative abundance per haul.
-The surveys cover European Seas and North American coasts.
+## Import surveys, pre-processed and format them
 
 ```{r Norway data}
-### Libraries
-library(data.table)
-library(dplyr)
-
 ### Load files
 Nor18<-read.table("btraal2018.csv", header=T, sep=";")
 Nor19<-read.table("btraal2019.csv", header=T, sep=";")
@@ -334,54 +357,16 @@ levels(norw_dat$Length) <- c(kkkk, 5500)
 #### CLEAN SPECIES NAMES
 ##########################################################################################
 
-library(worms)
-library(worrms)
-library(crul)
-library(urltools)
-
 # First we create a species list with unique species names
 sp_list <- as.data.frame(norw_dat$Species)
 colnames(sp_list)[1] <- c("species") # changing the column name
+
 sp_list <- data.frame(sp_list[!duplicated(sp_list[c("species")]),])
 colnames(sp_list)[1] <- c("species") # changing the column name
 sp_list <- subset(sp_list, !is.na(sp_list$species))
 
 # Clean species names
 sp_list$species <- as.character(sp_list$species, stringsAsFactors = FALSE)
-
-cleanspl <- function(name){
-  temp <- paste0(toupper(substr(name, 1, 1)), tolower(substr(name, 2, nchar(name))))
-  temp <- gsub("\\((.+?)\\)$", "", temp)
-  temp <- gsub("\\.$", "", temp) #remove last .
-  temp <- gsub(" $", "", temp) #remove empty space
-  temp <- gsub("            $", "", temp) #remove empty spaces
-  temp <- gsub("^ ", "", temp)
-  temp <- gsub(" .$", "", temp) #remove last single character
-  temp <- gsub(" .$$", "", temp) #remove last double characters
-  temp <- gsub(" unid$", "", temp)
-  temp <- gsub(" unident$", "", temp)
-  temp <- gsub(" spp$", "", temp)
-  temp <- gsub(" spp.$", "", temp)
-  temp <- gsub(" sp$", "", temp)
-  temp <- gsub(" sp.$", "", temp)
-  temp <- gsub(" s.c$", "", temp)
-  temp <- gsub(" s.p$", "", temp)
-  temp <- gsub(" s.f$", "", temp)
-  temp <- gsub(" s.o$", "", temp)
-  temp <- gsub(" so$", "", temp)
-  temp <- gsub(" yoy$", "", temp)
-  temp <- gsub(" YOY$", "", temp)
-  temp <- gsub(" n. gen$", "", temp)
-  temp <- gsub(" aff.$", "", temp)
-  temp <- gsub(" kroyer", "", temp)
-  temp <- gsub("-occidentale", "", temp)
-  temp <- gsub("_rubricing", "", temp)
-  temp <- gsub("-dilectus", "", temp)
-  temp <- gsub(" cf tubicola", "", temp)
-  temp <- gsub(",$", "", temp)
-  temp <- gsub(",", " ", temp)
-  return(temp)
-}
 sp_list$species.cleaned <- cleanspl(sp_list$species)
 sp_list$species.cleaned <- cleanspl(sp_list$species.cleaned)
 
@@ -394,8 +379,6 @@ for(i in 1:length(unique(sp_list$species.cleaned))){
 }
 
 sp_list$aphiaID <- as.character(sp_list$aphiaID)
-#setwd('C:/Users/auma/Documents/PhD DTU Aqua/(iv) Clean surveys/2. Clean taxonomy')
-#write.csv(sp_list, file='sp_list_europe_2004_2017.csv', row.names=FALSE)
 
 clean.names <- read.csv('data/check.species.old.names.WORMS.csv')
 clean.names$aphiaID <- NULL
@@ -475,38 +458,13 @@ rm(norw_dat)
 save(norw1819, file='Data/NORBTS1819.RData')
 
 
-##########################################################################################
-#### CHECKING SPATIAL DISTRIBUTION OF DATA POINTS
-##########################################################################################
-
-# require(ggplot2)
-# 
-# coords <- norw_dat %>%
-#   filter(Month %in% c(8,9)) %>% 
-#   select(ShootLat, ShootLong, Survey) %>%
-#   distinct()
-# 
-# ggplot(coords,aes(ShootLong,ShootLat))+
-#   #borders(xlim=c(-120,-110),ylim=c(40,41),fill="azure3",colour = "black") +
-#   borders(xlim=c(-20,50),ylim=c(54,82),fill="lightgrey",colour = "lightgrey") +
-#   coord_quickmap(xlim=c(-20,50),ylim=c(54,82))+theme_bw()+
-#   geom_point(cex = 1, col='navyblue')
-# 
-# coordY <- norw_dat %>%
-#   filter(Month %in% c(8,9)) %>% 
-#   select(HaulID, ShootLat, ShootLong, Survey, Year) %>%
-#   distinct() %>% 
-#   group_by(Year) %>% 
-#   summarize(number = length(unique(HaulID)))
 ```
 
 
 ```{r from Aurore M. Cleaning ICES and Norway}
 #rm(list=ls())
 # Libraries
-library(data.table)
-library(dplyr)
-library(rgdal)
+
 
 # Load data
 # ICES data
@@ -560,28 +518,6 @@ survey$SBT <- as.numeric(as.vector(survey$SBT))
 survey$Quarter <- as.numeric(as.vector(survey$Quarter))
 survey$Year <- as.numeric(as.vector(survey$Year))
 survey$StatRec <- as.character(survey$StatRec)
-
-
-# Check all species names ================================================
-##########################################################################
-##########################################################################
-# list.species <- sort(unique(survey$Species))
-# correct.names <- read.csv('data/list.spp.correct.names.csv')
-# correct.names$Match.type <- correct.names$ScientificName <- NULL
-# correct.names$Species <- as.character(correct.names$Species)
-# correct.names$ScientificName_accepted <- as.character(correct.names$ScientificName_accepted)
-# 
-# # join the correct list of species names
-# survey0 <- left_join(survey, correct.names, by='Species')
-# xx <- subset(survey0, is.na(survey0$ScientificName_accepted))
-# dim(xx) # ok
-# nrow(survey0)==nrow(survey)
-# survey <- survey0
-# rm(xx, survey0, correct.names)
-# 
-# # replace species names
-# survey$Species <- NULL
-# setnames(survey, old='ScientificName_accepted', new='Species')
 
 
 # Create final datasets ==================================================
